@@ -14,7 +14,7 @@
 -define(MAX_PAYLOAD, 256).
 
 -export([start/0, stop/0]).
--export([custom_connect/2, connect/0, connect/1, connect/2, connect/3, disconnect/1]).
+-export([custom_connect/3, connect/0, connect/1, connect/2, connect/3, disconnect/1]).
 -export([send_badge/3, send_message/2, send_message/3, send_message/4, send_message/5,
          send_message/6, send_message/7, send_message/8]).
 -export([estimate_available_bytes/1]).
@@ -44,9 +44,13 @@ start() ->
 stop() ->
   application:stop(apns).
 
--spec custom_connect(string(), string()) -> {ok, pid()} | {error, Reason::term()}.
-custom_connect(Cert, Key) ->
-    connect(custom_connection(Cert, Key)).
+-spec custom_connect(string(), string(), string()) -> {ok, pid()} | {error, Reason::term()}.
+custom_connect(AppId, Cert, Key) ->
+    case connect(custom_connection(Cert, Key)) of
+        {ok, Pid} -> gproc:reg({n, l, AppId}, Pid),
+                     {ok, Pid};
+        {error, Reason} -> {error, Reason}
+    end.
 
 %% @doc Opens an unnamed connection using the default parameters
 -spec connect() -> {ok, pid()} | {error, Reason::term()}.
