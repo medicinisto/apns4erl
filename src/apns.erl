@@ -14,7 +14,7 @@
 -define(MAX_PAYLOAD, 256).
 
 -export([start/0, stop/0]).
--export([connect/0, connect/1, connect/2, connect/3, disconnect/1]).
+-export([custom_connect/2, connect/0, connect/1, connect/2, connect/3, disconnect/1]).
 -export([send_badge/3, send_message/2, send_message/3, send_message/4, send_message/5,
          send_message/6, send_message/7, send_message/8]).
 -export([estimate_available_bytes/1]).
@@ -43,6 +43,10 @@ start() ->
 -spec stop() -> ok.
 stop() ->
   application:stop(apns).
+
+-spec custom_connect(string(), string()) -> {ok, Pid} | {error, Reason::term()}.
+custom_connect(Cert, Key) ->
+    connect(custom_connection(Cert, Key)).
 
 %% @doc Opens an unnamed connection using the default parameters
 -spec connect() -> {ok, pid()} | {error, Reason::term()}.
@@ -210,3 +214,24 @@ default_connection() ->
                               feedback_host   = get_env(feedback_host,    DefaultConn#apns_connection.feedback_host),
                               feedback_port   = get_env(feedback_port,    DefaultConn#apns_connection.feedback_port)
                              }.
+
+
+custom_connection(Cert, Key) ->
+  Conn = #apns_connection{},
+  Conn#apns_connection{apple_host      = get_env(apple_host,       Conn#apns_connection.apple_host),
+                       apple_port      = get_env(apple_port,       Conn#apns_connection.apple_port),
+                       key_file        = Key,
+                       cert_file       = Cert,
+                       timeout         = get_env(timeout,          DefaultConn#apns_connection.timeout),
+                       error_fun       = case get_env(error_fun,   Conn#apns_connection.error_fun) of
+                                           {M, F} -> fun(I, S) -> M:F(I, S) end;
+                                           Other -> Other
+                                         end,
+                       feedback_timeout= get_env(feedback_timeout, Conn#apns_connection.feedback_timeout),
+                       feedback_fun    = case get_env(feedback_fun, Conn#apns_connection.feedback_fun) of
+                                           {M, F} -> fun(T) -> M:F(T) end;
+                                           Other -> Other
+                                         end,
+                       feedback_host   = get_env(feedback_host,    Conn#apns_connection.feedback_host),
+                       feedback_port   = get_env(feedback_port,    Conn#apns_connection.feedback_port)
+                      }.
