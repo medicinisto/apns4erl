@@ -44,7 +44,7 @@ start() ->
 stop() ->
   application:stop(apns).
 
--spec custom_connect(string(), string()) -> {ok, Pid} | {error, Reason::term()}.
+-spec custom_connect(string(), string()) -> {ok, pid()} | {error, Reason::term()}.
 custom_connect(Cert, Key) ->
     connect(custom_connection(Cert, Key)).
 
@@ -222,7 +222,7 @@ custom_connection(Cert, Key) ->
                        apple_port      = get_env(apple_port,       Conn#apns_connection.apple_port),
                        key_file        = Key,
                        cert_file       = Cert,
-                       timeout         = get_env(timeout,          DefaultConn#apns_connection.timeout),
+                       timeout         = get_env(timeout,          Conn#apns_connection.timeout),
                        error_fun       = case get_env(error_fun,   Conn#apns_connection.error_fun) of
                                            {M, F} -> fun(I, S) -> M:F(I, S) end;
                                            Other -> Other
@@ -235,3 +235,4 @@ custom_connection(Cert, Key) ->
                        feedback_host   = get_env(feedback_host,    Conn#apns_connection.feedback_host),
                        feedback_port   = get_env(feedback_port,    Conn#apns_connection.feedback_port)
                       }.
+
