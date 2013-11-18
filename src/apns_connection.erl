@@ -67,14 +67,11 @@ init(Connection) ->
 
 %% @hidden
 open_out(Connection) ->
-  KeyFile = case Connection#apns_connection.key_file of
-    undefined -> [];
-    Filename -> [{keyfile, filename:absname(Filename)}]
-  end,
-  SslOpts = [
-    {certfile, filename:absname(Connection#apns_connection.cert_file)},
-    {mode, binary} | KeyFile
-  ],
+%  KeyFile = case Connection#apns_connection.key_file of
+%    undefined -> [];
+%    Filename -> [{keyfile, filename:absname(Filename)}]
+%  end,
+  SslOpts = [cert_opts(Connection), key_opts(Connection), {mode, binary}],
   RealSslOpts = case Connection#apns_connection.cert_password of
     undefined -> SslOpts;
     Password -> [{password, Password} | SslOpts]
@@ -88,17 +85,32 @@ open_out(Connection) ->
     {ok, OutSocket} -> {ok, OutSocket};
     {error, Reason} -> {error, Reason}
   end.
+  
+  
+  
+%% @hidden
+key_opts(Connection) ->
+  KeyType = Connection#apns_connection.key_type,
+  case Connection#apns_connection.key_file of
+    undefined -> {key, {KeyType, Connection#apns_connection.key_der}};
+    Filename -> {keyfile, filename:absname(Filename)}
+  end.
+
+%% @hidden
+cert_opts(Connection) ->
+  case Connection#apns_connection.cert_file of
+    undefined -> {cert, Connection#apns_connection.cert_der};
+    Filename -> {certfile, filename:absname(Filename)}
+  end.
+
 
 %% @hidden
 open_feedback(Connection) ->
-  KeyFile = case Connection#apns_connection.key_file of
-    undefined -> [];
-    Filename -> [{keyfile, filename:absname(Filename)}]
-  end,
-  SslOpts = [
-    {certfile, filename:absname(Connection#apns_connection.cert_file)},
-    {mode, binary} | KeyFile
-  ],
+%  KeyFile = case Connection#apns_connection.key_file of
+%    undefined -> [];
+%    Filename -> [{keyfile, filename:absname(Filename)}]
+%  end,
+  SslOpts = [cert_opts(Connection), key_opts(Connection), {mode, binary}],
   RealSslOpts = case Connection#apns_connection.cert_password of
     undefined -> SslOpts;
     Password -> [{password, Password} | SslOpts]
