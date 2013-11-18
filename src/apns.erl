@@ -16,7 +16,7 @@
 -export([start/0, stop/0]).
 -export([der_connect/4, connect/0, connect/1, connect/2, connect/3, disconnect/1]).
 -export([send_badge/3, send_message/2, send_message/3, send_message/4, send_message/5,
-         send_message/6, send_message/7, send_message/8]).
+         send_message/6, send_message/7, send_message/8, send_message/9, send_content/2]).
 -export([estimate_available_bytes/1]).
 -export([message_id/0, expiry/1, timestamp/1]).
 
@@ -94,6 +94,11 @@ disconnect(ConnId) ->
 -spec send_message(conn_id(), #apns_msg{}) -> ok.
 send_message(ConnId, Msg) ->
   apns_connection:send_message(ConnId, Msg).
+  
+-spec send_content(conn_id(), string()) -> ok.
+send_content(ConnId, DeviceToken) ->
+  send_message(ConnId, #apns_msg{device_token = DeviceToken,
+                                 'content-available' = 1}).
 
 %% @doc Sends a message to Apple with just a badge
 -spec send_badge(conn_id(), string(), integer()) -> ok.
@@ -163,6 +168,21 @@ send_message(ConnId, MsgId, DeviceToken, Alert, Badge, Sound, Expiry, ExtraArgs)
                                  extra  = ExtraArgs,
                                  expiry = Expiry,
                                  device_token = DeviceToken}).
+
+
+%% @doc Sends a full message to Apple with id, content, expiry and extra arguments
+-spec send_message(conn_id(), MsgId::binary(), Token::string(), Alert::alert(),
+                   Badge::integer(), Sound::apns_str(), Expiry::non_neg_integer(),
+                   ExtraArgs::[apns_mochijson2:json_property()], Content::0|1) -> ok.
+send_message(ConnId, MsgId, DeviceToken, Alert, Badge, Sound, Expiry, ExtraArgs, Content) ->
+  send_message(ConnId, #apns_msg{id     = MsgId,
+                                 alert  = Alert,
+                                 badge  = Badge,
+                                 sound  = Sound,
+                                 extra  = ExtraArgs,
+                                 expiry = Expiry,
+                                 device_token = DeviceToken,
+                                 'content-available' = Content}).
 
 %% @doc  Generates an "unique" and valid message Id
 -spec message_id() -> binary().

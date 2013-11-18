@@ -245,10 +245,12 @@ build_payload(#apns_msg{alert = Alert,
                         badge = Badge,
                         sound = Sound,
                         apns_extra=Apns_Extra,
-                        extra = Extra}) ->
-    build_payload([{alert, Alert},
-                   {badge, Badge},
-                   {sound, Sound}] ++ Apns_Extra, Extra).
+                        extra = Extra,
+                        'content-available' = Content}) ->
+  build_payload([{alert, Alert},
+                 {badge, Badge},
+                 {sound, Sound},
+                 {'content-available', Content}] ++ Apns_Extra, Extra).
 
 build_payload(Params, Extra) ->
   apns_mochijson2:encode(
@@ -274,8 +276,8 @@ do_build_payload([{Key,Value}|Params], Payload) ->
                               none -> [];
                               Image -> [{<<"launch-image">>, unicode:characters_to_binary(Image)}]
                             end ++
-                [{<<"loc-key">>, unicode:characters_to_binary(LocKey)},
-                 {<<"loc-args">>, lists:map(fun unicode:characters_to_binary/1, Args)}]},
+                  [{<<"loc-key">>, unicode:characters_to_binary(LocKey)},
+                   {<<"loc-args">>, lists:map(fun unicode:characters_to_binary/1, Args)}]},
       do_build_payload(Params, [{atom_to_binary(Key, utf8), Json} | Payload]);
     _ ->
       do_build_payload(Params,Payload)
