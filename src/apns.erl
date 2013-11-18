@@ -14,7 +14,7 @@
 -define(MAX_PAYLOAD, 256).
 
 -export([start/0, stop/0]).
--export([der_connect/3, connect/0, connect/1, connect/2, connect/3, disconnect/1]).
+-export([der_connect/4, connect/0, connect/1, connect/2, connect/3, disconnect/1]).
 -export([send_badge/3, send_message/2, send_message/3, send_message/4, send_message/5,
          send_message/6, send_message/7, send_message/8]).
 -export([estimate_available_bytes/1]).
@@ -45,9 +45,9 @@ stop() ->
   application:stop(apns).
 
 %% @doc Behaves as connect/0, but instead uses user-supplied certificate and key files.
--spec der_connect(binary(), atom(), binary()) -> {ok, pid()} | {error, Reason::term()}.
-der_connect(CertDer, KeyType, KeyDer) ->
-    connect(custom_connection(CertDer, KeyType, KeyDer)).
+-spec der_connect(binary(), atom(), binary(), {atom(), fun((binary(), apns:status()) -> stop | _)}) -> {ok, pid()} | {error, Reason::term()}.
+der_connect(CertDer, KeyType, KeyDer, ErrorFun) ->
+    connect(custom_connection(CertDer, KeyType, KeyDer, ErrorFun)).
     
 %% @doc Opens an unnamed connection using the default parameters
 -spec connect() -> {ok, pid()} | {error, Reason::term()}.
@@ -217,7 +217,7 @@ default_connection() ->
                              }.
 
 
-custom_connection(CertDer, KeyType, KeyDer) ->
+custom_connection(CertDer, KeyType, KeyDer, ErrorFun) ->
   Conn = #apns_connection{},
   Conn#apns_connection{apple_host       = get_env(apple_host,       Conn#apns_connection.apple_host),
                        apple_port       = get_env(apple_port,       Conn#apns_connection.apple_port),
@@ -227,10 +227,14 @@ custom_connection(CertDer, KeyType, KeyDer) ->
                        key_der          = KeyDer,
                        cert_der         = CertDer,
                        timeout          = get_env(timeout,          Conn#apns_connection.timeout),
-                       error_fun        = case get_env(error_fun,   Conn#apns_connection.error_fun) of
-                                           {M, F} -> fun(I, S) -> M:F(I, S) end;
-                                           Other -> Other
-                                         end,
+                       error_fun        = case ErrorFun of
+                                            undefined -> case get_env(error_fun,   Conn#apns_connection.error_fun) of
+                                                           {M, F} -> fun(I, S) -> M:F(I, S) end;
+                                                           Other -> Other
+                                                         end;
+                                            {M, F} -> fun(I, S) -> M:F(I, S) end;
+                                            _ -> undefined
+                                          end,
                        feedback_timeout = get_env(feedback_timeout, Conn#apns_connection.feedback_timeout),
                        feedback_fun     = case get_env(feedback_fun, Conn#apns_connection.feedback_fun) of
                                            {M, F} -> fun(T) -> M:F(T) end;
