@@ -82,3 +82,7 @@ If there were no errors, but Apple reported that the user removed the applicatio
     handle_apns_delete_subscription(Data) ->
       error_logger:info_msg("delete subscription: ~p~n", [Data]).
 ```
+
+layer_custom branch
+===================================
+This branch contains modifications mainly for providing connection parameters programmatically (such as the certificate/key binaries, error/feedback functions etc.)
