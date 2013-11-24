@@ -14,7 +14,7 @@
 -define(MAX_PAYLOAD, 256).
 
 -export([start/0, stop/0]).
--export([der_connect/4, connect/0, connect/1, connect/2, connect/3, disconnect/1]).
+-export([der_connect/6, connect/0, connect/1, connect/2, connect/3, disconnect/1]).
 -export([send_badge/3, send_message/2, send_message/3, send_message/4, send_message/5,
          send_message/6, send_message/7, send_message/8, send_message/9, send_content/2]).
 -export([estimate_available_bytes/1]).
@@ -32,6 +32,13 @@
 -type alert() :: apns_str() | #loc_alert{}.
 -export_type([alert/0]).
 
+-type error_fun() :: {atom(), fun(({undefined | pid(), binary()}, apns:status()) -> stop | _)}.
+-export_type([error_fun/0]).
+
+-type feedback_fun() :: {atom(), fun(({undefined | pid(), calendar:datetime(), string()}) -> _)}.
+-export_type([feedback_fun/0]).
+
+
 %% @doc Starts the application
 -spec start() -> ok | {error, {already_started, apns}}.
 start() ->
@@ -44,10 +51,11 @@ start() ->
 stop() ->
   application:stop(apns).
 
-%% @doc Behaves as connect/0, but instead uses user-supplied certificate and key files.
--spec der_connect(binary(), atom(), binary(), {atom(), fun((binary(), apns:status()) -> stop | _)}) -> {ok, pid()} | {error, Reason::term()}.
-der_connect(CertDer, KeyType, KeyDer, ErrorFun) ->
-    connect(custom_connection(CertDer, KeyType, KeyDer, ErrorFun)).
+%% @doc Behaves as connect/0, but instead uses user-supplied certificate
+%%      and key files, error and feedback functions, and connection owner.
+-spec der_connect(binary(), atom(), binary(), error_fun(), feedback_fun(), undefined | pid()) -> {ok, pid()} | {error, Reason::term()}.
+der_connect(CertDer, KeyType, KeyDer, ErrorFun, FeedbackFun, Owner) ->
+    owner_connect(custom_connection(CertDer, KeyType, KeyDer, ErrorFun, FeedbackFun), Owner).
     
 %% @doc Opens an unnamed connection using the default parameters
 -spec connect() -> {ok, pid()} | {error, Reason::term()}.
@@ -57,11 +65,19 @@ connect() ->
 %% @doc Opens an unnamed connection using the given feedback or error function
 %%      or using the given #apns_connection{} parameters
 %%      or the name and default configuration if a name is given
+-spec owner_connect(#apns_connection{}, undefined | pid()) -> {ok, pid()} | {error, Reason :: term()}.
+owner_connect(Connection, Owner) ->
+  apns_sup:start_connection(Connection, Owner).
+
+
+%% @doc Opens an unnamed connection using the given feedback or error function
+%%      or using the given #apns_connection{} parameters
+%%      or the name and default configuration if a name is given
 -spec connect(atom() | string() | fun((string()) -> _) | #apns_connection{}) -> {ok, pid()} | {error, {already_started, pid()}} | {error, Reason::term()}.
 connect(Name) when is_atom(Name) ->
   connect(Name, default_connection());
 connect(Connection) when is_record(Connection, apns_connection) ->
-  apns_sup:start_connection(Connection);
+  apns_sup:start_connection(Connection, undefined);
 connect(Fun) when is_function(Fun, 1) ->
   connect((default_connection())#apns_connection{feedback_fun = Fun});
 connect(Fun) when is_function(Fun, 2) ->
@@ -72,11 +88,12 @@ connect(Fun) when is_function(Fun, 2) ->
 %%      or using the given #apns_connection{} parameters
 -spec connect(atom(), string() | fun((string()) -> _) | #apns_connection{}) -> {ok, pid()} | {error, {already_started, pid()}} | {error, Reason::term()}.
 connect(Name, Connection) when is_record(Connection, apns_connection) ->
-  apns_sup:start_connection(Name, Connection);
+  apns_sup:start_connection(Name, Connection, undefined);
 connect(Name, Fun) when is_function(Fun, 1) ->
   connect(Name, (default_connection())#apns_connection{feedback_fun = Fun});
 connect(Name, Fun) when is_function(Fun, 2) ->
   connect(Name, (default_connection())#apns_connection{error_fun = Fun}).
+
 
 %% @doc Opens an connection named after the atom()
 %%      using the given feedback and error functions
@@ -237,7 +254,7 @@ default_connection() ->
                              }.
 
 
-custom_connection(CertDer, KeyType, KeyDer, ErrorFun) ->
+custom_connection(CertDer, KeyType, KeyDer, ErrorFun, FeedbackFun) ->
   Conn = #apns_connection{},
   Conn#apns_connection{apple_host       = get_env(apple_host,       Conn#apns_connection.apple_host),
                        apple_port       = get_env(apple_port,       Conn#apns_connection.apple_port),
@@ -256,10 +273,14 @@ custom_connection(CertDer, KeyType, KeyDer, ErrorFun) ->
                                             _ -> undefined
                                           end,
                        feedback_timeout = get_env(feedback_timeout, Conn#apns_connection.feedback_timeout),
-                       feedback_fun     = case get_env(feedback_fun, Conn#apns_connection.feedback_fun) of
-                                           {M, F} -> fun(T) -> M:F(T) end;
-                                           Other -> Other
-                                         end,
+                       feedback_fun     = case FeedbackFun of
+                                            undefined -> case get_env(feedback_fun, Conn#apns_connection.feedback_fun) of
+                                                           {M, F} -> fun(T) -> M:F(T) end;
+                                                           Other -> Other
+                                                         end;
+                                            {M, F} -> fun(T) -> M:F(T) end;
+                                            _ -> undefined
+                                          end,
                        feedback_host    = get_env(feedback_host,    Conn#apns_connection.feedback_host),
                        feedback_port    = get_env(feedback_port,    Conn#apns_connection.feedback_port)
                       }.

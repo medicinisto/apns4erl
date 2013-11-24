@@ -12,7 +12,7 @@
 
 -include("apns.hrl").
 
--export([start_link/0, start_connection/1, start_connection/2]).
+-export([start_link/0, start_connection/2, start_connection/3]).
 -export([init/1]).
 
 %% ===================================================================
@@ -24,14 +24,14 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% @hidden
--spec start_connection(#apns_connection{}) -> {ok, pid()} | {error, term()}.
-start_connection(Connection) ->
-  supervisor:start_child(?MODULE, [Connection]).
+-spec start_connection(#apns_connection{}, undefined | pid()) -> {ok, pid()} | {error, term()}.
+start_connection(Connection, Owner) ->
+  supervisor:start_child(?MODULE, [Connection, Owner]).
 
 %% @hidden
--spec start_connection(atom(), #apns_connection{}) -> {ok, pid()} | {error, term()}.
-start_connection(Name, Connection) ->
-  supervisor:start_child(?MODULE, [Name, Connection]).
+-spec start_connection(atom(), #apns_connection{}, undefined | pid()) -> {ok, pid()} | {error, term()}.
+start_connection(Name, Connection, Owner) ->
+  supervisor:start_child(?MODULE, [Name, Connection, Owner]).
 
 %% ===================================================================
 %% Supervisor callbacks

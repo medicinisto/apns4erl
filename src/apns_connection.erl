@@ -12,7 +12,7 @@
 -include("apns.hrl").
 -include("localized.hrl").
 
--export([start_link/1, start_link/2, init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([start_link/2, start_link/3, init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([send_message/2, stop/1]).
 -export([build_payload/1]).
 
@@ -20,7 +20,8 @@
                 in_socket         :: tuple(),
                 connection        :: #apns_connection{},
                 in_buffer = <<>>  :: binary(),
-                out_buffer = <<>> :: binary()}).
+                out_buffer = <<>> :: binary(),
+                owner             :: undefined | pid()}).
 -type state() :: #state{}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -38,25 +39,25 @@ stop(ConnId) ->
   gen_server:cast(ConnId, stop).
 
 %% @hidden
--spec start_link(atom(), #apns_connection{}) -> {ok, pid()} | {error, {already_started, pid()}}.
-start_link(Name, Connection) ->
-  gen_server:start_link({local, Name}, ?MODULE, Connection, []).
+-spec start_link(atom(), #apns_connection{}, undefined | pid()) -> {ok, pid()} | {error, {already_started, pid()}}.
+start_link(Name, Connection, Owner) ->
+  gen_server:start_link({local, Name}, ?MODULE, {Connection, Owner}, []).
 %% @hidden
--spec start_link(#apns_connection{}) -> {ok, pid()}.
-start_link(Connection) ->
-  gen_server:start_link(?MODULE, Connection, []).
+-spec start_link(#apns_connection{}, undefined | pid()) -> {ok, pid()}.
+start_link(Connection, Owner) ->
+  gen_server:start_link(?MODULE, {Connection, Owner}, []).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Server implementation, a.k.a.: callbacks
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% @hidden
--spec init(#apns_connection{}) -> {ok, state()} | {stop, term()}.
-init(Connection) ->
+-spec init({#apns_connection{}, undefined | pid()}) -> {ok, state()} | {stop, term()}.
+init({Connection, Owner}) ->
   try
     case open_out(Connection) of
       {ok, OutSocket} -> case open_feedback(Connection) of
-          {ok, InSocket} -> {ok, #state{out_socket=OutSocket, in_socket=InSocket, connection=Connection}};
+          {ok, InSocket} -> {ok, #state{out_socket=OutSocket, in_socket=InSocket, connection=Connection, owner=Owner}};
           {error, Reason} -> {stop, Reason}
         end;
       {error, Reason} -> {stop, Reason}
@@ -67,11 +68,11 @@ init(Connection) ->
 
 %% @hidden
 open_out(Connection) ->
-%  KeyFile = case Connection#apns_connection.key_file of
-%    undefined -> [];
-%    Filename -> [{keyfile, filename:absname(Filename)}]
-%  end,
-  SslOpts = [cert_opts(Connection), key_opts(Connection), {mode, binary}],
+  KeyOpts = case key_opts(Connection) of
+              undefined -> [];
+              Other -> [Other]
+            end,
+  SslOpts = [cert_opts(Connection), KeyOpts, {mode, binary}],
   RealSslOpts = case Connection#apns_connection.cert_password of
     undefined -> SslOpts;
     Password -> [{password, Password} | SslOpts]
@@ -91,26 +92,34 @@ open_out(Connection) ->
 %% @hidden
 key_opts(Connection) ->
   KeyType = Connection#apns_connection.key_type,
+  KeyDer = Connection#apns_connection.key_der,
   case Connection#apns_connection.key_file of
-    undefined -> {key, {KeyType, Connection#apns_connection.key_der}};
+    undefined -> case KeyDer of
+                    undefined -> undefined;
+                    _ -> {key, {KeyType, KeyDer}}
+                 end;
     Filename -> {keyfile, filename:absname(Filename)}
   end.
 
 %% @hidden
 cert_opts(Connection) ->
+  CertDer = Connection#apns_connection.cert_der,
   case Connection#apns_connection.cert_file of
-    undefined -> {cert, Connection#apns_connection.cert_der};
+    undefined -> case CertDer of
+                    undefined -> undefined;
+                    _ -> {cert, CertDer}
+                 end;
     Filename -> {certfile, filename:absname(Filename)}
   end.
 
 
 %% @hidden
 open_feedback(Connection) ->
-%  KeyFile = case Connection#apns_connection.key_file of
-%    undefined -> [];
-%    Filename -> [{keyfile, filename:absname(Filename)}]
-%  end,
-  SslOpts = [cert_opts(Connection), key_opts(Connection), {mode, binary}],
+  KeyOpts = case key_opts(Connection) of
+              undefined -> [];
+              Other -> [Other]
+            end,
+  SslOpts = [cert_opts(Connection), KeyOpts, {mode, binary}],
   RealSslOpts = case Connection#apns_connection.cert_password of
     undefined -> SslOpts;
     Password -> [{password, Password} | SslOpts]
@@ -162,13 +171,14 @@ handle_cast(stop, State) ->
 handle_info({ssl, SslSocket, Data}, State = #state{out_socket = SslSocket,
                                                    connection =
                                                      #apns_connection{error_fun = Error},
-                                                   out_buffer = CurrentBuffer}) ->
+                                                   out_buffer = CurrentBuffer,
+                                                   owner = Owner}) ->
   case <<CurrentBuffer/binary, Data/binary>> of
     <<Command:1/unit:8, StatusCode:1/unit:8, MsgId:4/binary, Rest/binary>> ->
       case Command of
         8 -> %% Error
           Status = parse_status(StatusCode),
-          try Error(MsgId, Status) of
+          try Error({Owner, MsgId}, Status) of
             stop -> throw({stop, {msg_error, MsgId, Status}, State});
             _ -> noop
           catch
@@ -189,14 +199,15 @@ handle_info({ssl, SslSocket, Data}, State = #state{out_socket = SslSocket,
 handle_info({ssl, SslSocket, Data}, State = #state{in_socket  = SslSocket,
                                                    connection =
                                                      #apns_connection{feedback_fun = Feedback},
-                                                   in_buffer  = CurrentBuffer
+                                                   in_buffer  = CurrentBuffer,
+                                                   owner = Owner
                                                   }) ->
   case <<CurrentBuffer/binary, Data/binary>> of
     <<TimeT:4/big-unsigned-integer-unit:8,
       Length:2/big-unsigned-integer-unit:8,
       Token:Length/binary,
       Rest/binary>> ->
-      try Feedback({apns:timestamp(TimeT), bin_to_hexstr(Token)})
+      try Feedback({Owner, apns:timestamp(TimeT), bin_to_hexstr(Token)})
       catch
         _:Error ->
           error_logger:error_msg("Error trying to inform feedback token ~p:~n\t~p~n", [Token, Error])
