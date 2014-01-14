@@ -14,7 +14,7 @@
 -define(MAX_PAYLOAD, 256).
 
 -export([start/0, stop/0]).
--export([der_connect/6, connect/0, connect/1, connect/2, connect/3, disconnect/1]).
+-export([der_connect/7, connect/0, connect/1, connect/2, connect/3, disconnect/1]).
 -export([send_badge/3, send_message/2, send_message/3, send_message/4, send_message/5,
          send_message/6, send_message/7, send_message/8, send_message/9, send_content/2]).
 -export([estimate_available_bytes/1]).
@@ -52,10 +52,10 @@ stop() ->
   application:stop(apns).
 
 %% @doc Behaves as connect/0, but instead uses user-supplied certificate
-%%      and key files, error and feedback functions, and connection owner.
--spec der_connect(binary(), atom(), binary(), error_fun(), feedback_fun(), undefined | pid()) -> {ok, pid()} | {error, Reason::term()}.
-der_connect(CertDer, KeyType, KeyDer, ErrorFun, FeedbackFun, Owner) ->
-    owner_connect(custom_connection(CertDer, KeyType, KeyDer, ErrorFun, FeedbackFun), Owner).
+%%      and key files, error and feedback functions, connection owner, and connection mode (sandbox or not).
+-spec der_connect(binary(), atom(), binary(), error_fun(), feedback_fun(), undefined | pid(), atom()) -> {ok, pid()} | {error, Reason::term()}.
+der_connect(CertDer, KeyType, KeyDer, ErrorFun, FeedbackFun, Owner, Mode) ->
+    owner_connect(custom_connection(CertDer, KeyType, KeyDer, ErrorFun, FeedbackFun, Mode), Owner).
     
 %% @doc Opens an unnamed connection using the default parameters
 -spec connect() -> {ok, pid()} | {error, Reason::term()}.
@@ -254,9 +254,15 @@ default_connection() ->
                              }.
 
 
-custom_connection(CertDer, KeyType, KeyDer, ErrorFun, FeedbackFun) ->
+custom_connection(CertDer, KeyType, KeyDer, ErrorFun, FeedbackFun, Mode) ->
+  {PUrl, FUrl} = case Mode of
+    sandbox ->
+      {"gateway.sandbox.push.apple.com", "feedback.sandbox.push.apple.com"};
+    _Other ->
+      {"gateway.push.apple.com", "feedback.push.apple.com"}
+    end,
   Conn = #apns_connection{},
-  Conn#apns_connection{apple_host       = get_env(apple_host,       Conn#apns_connection.apple_host),
+  Conn#apns_connection{apple_host       = PUrl,
                        apple_port       = get_env(apple_port,       Conn#apns_connection.apple_port),
                        key_file         = undefined,
                        cert_file        = undefined,
@@ -281,7 +287,8 @@ custom_connection(CertDer, KeyType, KeyDer, ErrorFun, FeedbackFun) ->
                                             {M, F} -> fun(T) -> M:F(T) end;
                                             _ -> undefined
                                           end,
-                       feedback_host    = get_env(feedback_host,    Conn#apns_connection.feedback_host),
+                       feedback_host    = FUrl,
                        feedback_port    = get_env(feedback_port,    Conn#apns_connection.feedback_port)
                       }.
+
 

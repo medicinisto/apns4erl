@@ -266,7 +266,8 @@ build_payload(#apns_msg{alert = Alert,
 build_payload(Params, Extra) ->
   apns_mochijson2:encode(
     {[{<<"aps">>, do_build_payload(Params, [])} | Extra]}).
-do_build_payload([{Key,Value}|Params], Payload) ->
+
+do_build_payload([{Key,Value}|Params], Payload) ->  
   case Value of
     Value when is_list(Value); is_binary(Value) ->
       do_build_payload(Params, [{atom_to_binary(Key, utf8), unicode:characters_to_binary(Value)} | Payload]);
@@ -336,3 +337,4 @@ parse_status(6) -> missing_topic_size;
 parse_status(7) -> missing_payload_size;
 parse_status(8) -> invalid_token;
 parse_status(_) -> unknown.
+
