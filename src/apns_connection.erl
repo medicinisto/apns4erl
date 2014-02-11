@@ -60,6 +60,8 @@ init({Connection, Owner}) ->
           {ok, InSocket} -> {ok, #state{out_socket=OutSocket, in_socket=InSocket, connection=Connection, owner=Owner}};
           {error, Reason} -> {stop, Reason}
         end;
+      {error, {tls_alert, "certificate revoked"}} -> ignore;
+      {error, {tls_alert, R}} -> {stop, R};
       {error, Reason} -> {stop, Reason}
     end
   catch
@@ -146,7 +148,6 @@ handle_cast(Msg, State=#state{out_socket=undefined,connection=Connection}) ->
     error_logger:info_msg("Reconnecting to APNS...~n"),
     case open_out(Connection) of
       {ok, Socket} -> handle_cast(Msg, State#state{out_socket=Socket});
-      {error, {tls_alert, "certificate revoked"}} -> ignore;
       {error, Reason} -> {stop, Reason}
     end
   catch
