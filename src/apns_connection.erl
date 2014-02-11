@@ -60,7 +60,7 @@ init({Connection, Owner}) ->
           {ok, InSocket} -> {ok, #state{out_socket=OutSocket, in_socket=InSocket, connection=Connection, owner=Owner}};
           {error, Reason} -> {stop, Reason}
         end;
-      {error, {tls_alert, "certificate revoked"}} -> ignore;
+      {error, {tls_alert, "certificate revoked"}} -> {stop, {shutdown, creds_revoked}};
       {error, {tls_alert, R}} -> {stop, R};
       {error, Reason} -> {stop, Reason}
     end
