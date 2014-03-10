@@ -42,4 +42,4 @@ init(_) ->
   {ok,
    {{simple_one_for_one, 0, 1},
     [{connection, {apns_connection, start_link, []},
-      transient, 5000, worker, [apns_connection]}]}}.
+      temporary, 5000, worker, [apns_connection]}]}}.
