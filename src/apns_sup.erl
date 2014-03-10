@@ -37,9 +37,9 @@ start_connection(Name, Connection, Owner) ->
 %% Supervisor callbacks
 %% ===================================================================
 %% @hidden
--spec init(_) ->  {ok, {{simple_one_for_one, 5, 10}, [{connection, {apns_connection, start_link, []}, transient, 5000, worker, [apns_connection]}]}}.
+-spec init(_) ->  {ok, {{simple_one_for_one, 0, 1}, [{connection, {apns_connection, start_link, []}, temporary, 5000, worker, [apns_connection]}]}}.
 init(_) ->
   {ok,
-   {{simple_one_for_one, 5, 10},
+   {{simple_one_for_one, 0, 1},
     [{connection, {apns_connection, start_link, []},
       transient, 5000, worker, [apns_connection]}]}}.
