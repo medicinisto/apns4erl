@@ -13,7 +13,7 @@
 -include("localized.hrl").
 
 -export([start_link/2, start_link/3, init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([send_message/2, stop/1]).
+-export([send_message/2, sync_send_message/2, stop/1]).
 -export([build_payload/1]).
 
 -record(state, {out_socket        :: tuple(),
@@ -32,6 +32,14 @@
 -spec send_message(apns:conn_id(), #apns_msg{}) -> ok.
 send_message(ConnId, Msg) ->
   gen_server:cast(ConnId, Msg).
+
+
+%% @doc  Sends a message to apple through the connection, and reports
+%% if the message went through. This does not mean the message
+%% actually got to the device
+-spec sync_send_message(apns:conn_id(), #apns_msg{}) -> ok.
+sync_send_message(ConnId, Msg) ->
+    gen_server:call(ConnId, Msg).
 
 %% @doc  Stops the connection
 -spec stop(apns:conn_id()) -> ok.
@@ -137,9 +145,14 @@ open_feedback(Connection) ->
   end.
 
 %% @hidden
--spec handle_call(X, reference(), state()) -> {stop, {unknown_request, X}, {unknown_request, X}, state()}.
-handle_call(Request, _From, State) ->
-  {stop, {unknown_request, Request}, {unknown_request, Request}, State}.
+
+handle_call(#apns_msg{} = Msg, _From, State) ->
+    case handle_cast(Msg, State) of
+        {stop, Reason, State2} ->
+            {reply, {error, Reason}, State2};
+        {noreply, State2} ->
+            {reply, ok, State2}
+    end.
 
 %% @hidden
 -spec handle_cast(stop | #apns_msg{}, state()) -> {noreply, state()} | {stop, normal | {error, term()}, state()}.
