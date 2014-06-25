@@ -2,7 +2,7 @@
 
 -record(apns_connection, {apple_host        = "gateway.sandbox.push.apple.com"      :: string(),
                           apple_port        = 2195                                  :: integer(),
-                          cert_file         = undefined                             :: string(),
+                          cert_file         = undefined                             :: undefined | string(),
                           key_file          = undefined                             :: undefined | string(),
                           cert_der          = undefined                             :: undefined | binary(),
                           key_der           = undefined                             :: undefined | {atom(), binary()},

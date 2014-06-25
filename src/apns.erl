@@ -263,32 +263,32 @@ custom_connection(CertDer, KeyType, KeyDer, ErrorFun, FeedbackFun, Mode) ->
     end,
   Conn = #apns_connection{},
   Conn#apns_connection{apple_host       = PUrl,
-                       apple_port       = get_env(apple_port,       Conn#apns_connection.apple_port),
+                       apple_port       = get_env(apple_port, Conn#apns_connection.apple_port),
                        key_file         = undefined,
                        cert_file        = undefined,
                        key_type         = KeyType,
                        key_der          = KeyDer,
                        cert_der         = CertDer,
-                       timeout          = get_env(timeout,          Conn#apns_connection.timeout),
+                       timeout          = get_env(timeout, Conn#apns_connection.timeout),
                        error_fun        = case ErrorFun of
-                                            undefined -> case get_env(error_fun,   Conn#apns_connection.error_fun) of
-                                                           {M, F} -> fun(I, S) -> M:F(I, S) end;
+                                            undefined -> case get_env(error_fun, Conn#apns_connection.error_fun) of
+                                                           {M, F} -> fun M:F/2;
                                                            Other -> Other
                                                          end;
-                                            {M, F} -> fun(I, S) -> M:F(I, S) end;
+                                            {M, F} -> fun M:F/1;
                                             _ -> undefined
                                           end,
                        feedback_timeout = get_env(feedback_timeout, Conn#apns_connection.feedback_timeout),
                        feedback_fun     = case FeedbackFun of
                                             undefined -> case get_env(feedback_fun, Conn#apns_connection.feedback_fun) of
-                                                           {M, F} -> fun(T) -> M:F(T) end;
+                                                           {M, F} -> fun M:F/1;
                                                            Other -> Other
                                                          end;
                                             {M, F} -> fun(T) -> M:F(T) end;
                                             _ -> undefined
                                           end,
                        feedback_host    = FUrl,
-                       feedback_port    = get_env(feedback_port,    Conn#apns_connection.feedback_port)
+                       feedback_port    = get_env(feedback_port, Conn#apns_connection.feedback_port)
                       }.
 
 
