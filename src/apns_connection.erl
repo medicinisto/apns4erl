@@ -76,21 +76,9 @@ test_connection(Connection) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% @hidden
--spec init({#apns_connection{}, undefined | pid()}) -> {ok, state()} | {stop, term()}.
+-spec init({#apns_connection{}, undefined | pid()}) -> {ok, state(), non_neg_integer()}.
 init({Connection, Owner}) ->
-  try
-    case open_out(Connection) of
-      {ok, OutSocket} -> case open_feedback(Connection) of
-          {ok, InSocket} -> {ok, #state{out_socket=OutSocket, in_socket=InSocket, connection=Connection, owner=Owner}};
-          {error, Reason} -> {stop, Reason}
-        end;
-      {error, {tls_alert, "certificate revoked"}} -> {stop, {shutdown, creds_revoked}};
-      {error, {tls_alert, R}} -> {stop, R};
-      {error, Reason} -> {stop, Reason}
-    end
-  catch
-    _:{error, Reason2} -> {stop, Reason2}
-  end.
+    {ok, #state{connection=Connection, owner = Owner}, 0}.
 
 %% @hidden
 open_out(Connection) ->
@@ -103,17 +91,11 @@ open_out(Connection) ->
     undefined -> SslOpts;
     Password -> [{password, Password} | SslOpts]
   end,
-  case ssl:connect(
+  ssl:connect(
     Connection#apns_connection.apple_host,
     Connection#apns_connection.apple_port,
     RealSslOpts,
-    Connection#apns_connection.timeout
-  ) of
-    {ok, OutSocket} -> {ok, OutSocket};
-    {error, Reason} -> {error, Reason}
-  end.
-  
-  
+    Connection#apns_connection.timeout).
   
 %% @hidden
 key_opts(Connection) ->
@@ -269,6 +251,22 @@ handle_info({ssl_closed, SslSocket}, State = #state{out_socket = SslSocket}) ->
   error_logger:info_msg("APNS disconnected~n"),
   {noreply, State#state{out_socket=undefined}};
 
+
+handle_info(timeout, #state{connection = Connection}=State) ->
+    case open_out(Connection) of
+      {ok, Socket} -> 
+            lager:debug("Opened connection, ~n"),
+            case open_feedback(Connection) of
+                {ok, InSocket} -> 
+                    {noreply, State#state{out_socket=Socket, in_socket=InSocket}};
+                {error, Reason} -> 
+                    {stop, {error, Reason}, State}
+            end;
+      {error, Reason} -> 
+            {stop, {error, Reason}, State}
+    end;
+
+ 
 handle_info(Request, State) ->
   {stop, {unknown_request, Request}, State}.
 
