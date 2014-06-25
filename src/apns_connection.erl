@@ -17,6 +17,9 @@
 -export([build_payload/1]).
 -export([test_connection/1]).
 
+% for mocking
+-export([ssl_connect/4, ssl_send/2, ssl_close/1]).
+
 -record(state, {out_socket        :: tuple(),
                 in_socket         :: tuple(),
                 connection        :: #apns_connection{},
@@ -60,7 +63,7 @@ start_link(Connection, Owner) ->
 test_connection(Connection) ->
     case open_out(Connection) of
         {ok, Socket} ->
-            ssl:close(Socket),
+            ssl_close(Socket),
             ok;
 
         {error, {tls_alert, "certificate revoked"}} -> 
@@ -91,7 +94,7 @@ open_out(Connection) ->
     undefined -> SslOpts;
     Password -> [{password, Password} | SslOpts]
   end,
-  ssl:connect(
+  ssl_connect(
     Connection#apns_connection.apple_host,
     Connection#apns_connection.apple_port,
     RealSslOpts,
@@ -132,7 +135,7 @@ open_feedback(Connection) ->
     undefined -> SslOpts;
     Password -> [{password, Password} | SslOpts]
   end,
-  case ssl:connect(
+  case ssl_connect(
     Connection#apns_connection.feedback_host,
     Connection#apns_connection.feedback_port,
     RealSslOpts,
@@ -337,7 +340,7 @@ send_payload(Socket, MsgId, Expiry, BinToken, Payload) ->
                 BinPayload/binary>>],
     error_logger:info_msg("Sending msg ~p (expires on ~p)~n",
                          [MsgId, Expiry]),
-    ssl:send(Socket, Packet).
+    ssl_send(Socket, Packet).
 
 hexstr_to_bin(S) ->
   hexstr_to_bin(S, []).
@@ -367,3 +370,12 @@ parse_status(7) -> missing_payload_size;
 parse_status(8) -> invalid_token;
 parse_status(_) -> unknown.
 
+
+ssl_send(Socket, Data) ->
+    ssl:send(Socket, Data).
+
+ssl_connect(Host, Port, Opts, Timeout) ->
+    ssl:connect(Host, Port, Opts, Timeout).
+
+ssl_close(Socket) ->
+    ssl:close(Socket).
