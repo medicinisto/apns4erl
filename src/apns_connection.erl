@@ -15,6 +15,7 @@
 -export([start_link/2, start_link/3, init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([send_message/2, sync_send_message/2, stop/1]).
 -export([build_payload/1]).
+-export([test_connection/1]).
 
 -record(state, {out_socket        :: tuple(),
                 in_socket         :: tuple(),
@@ -54,6 +55,21 @@ start_link(Name, Connection, Owner) ->
 -spec start_link(#apns_connection{}, undefined | pid()) -> {ok, pid()}.
 start_link(Connection, Owner) ->
   gen_server:start_link(?MODULE, {Connection, Owner}, []).
+
+-spec test_connection(#apns_connection{}) -> ok | {error, any()}.
+test_connection(Connection) ->
+    case open_out(Connection) of
+        {ok, Socket} ->
+            ssl:close(Socket),
+            ok;
+
+        {error, {tls_alert, "certificate revoked"}} -> 
+             {error, certificate_revoked};
+        {error, {tls_alert, R}} -> 
+            {error, {invalid_certificate, R}};
+        {error, Reason} -> 
+            {error, {unknown, Reason}}
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Server implementation, a.k.a.: callbacks
