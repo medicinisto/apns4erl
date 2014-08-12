@@ -61,7 +61,6 @@ start_link(Connection, Owner) ->
 
 -spec test_connection(#apns_connection{}) -> ok | {error, any()}.
 test_connection(Connection) ->
-    io:format("drappLog test_connection~p~n", [{Connection}]),
     case open_out(Connection) of
         {ok, Socket} ->
             ssl_close(Socket),
