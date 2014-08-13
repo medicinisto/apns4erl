@@ -149,10 +149,10 @@ handle_cast(Msg, State=#state{out_socket=undefined,connection=Connection}) ->
     lager:info("Reconnecting to APNS..."),
     case open_out(Connection) of
       {ok, Socket} -> handle_cast(Msg, State#state{out_socket=Socket});
-      {error, Reason} -> handle_error_and_stop(connect, Reason, State)
+      {error, Reason} -> handle_error_and_stop(Msg, connect, Reason, State)
     end
   catch
-    _:{error, Reason2} -> handle_error_and_stop(connect, Reason2, State)
+    _:{error, Reason2} -> handle_error_and_stop(Msg, connect, Reason2, State)
   end;
 
 handle_cast(Msg, State) when is_record(Msg, apns_msg) ->
@@ -163,10 +163,10 @@ handle_cast(Msg, State) when is_record(Msg, apns_msg) ->
     ok ->
       {noreply, State};
     {error, Reason} ->
-      handle_error_and_stop(send_payload, Reason, State)
+      handle_error_and_stop(Msg, send_payload, Reason, State)
   catch
       _:Reason ->
-          handle_error_and_stop(send_payload, Reason, State)
+          handle_error_and_stop(Msg, send_payload, Reason, State)
   end;
 
 handle_cast(stop, State) ->
@@ -371,10 +371,10 @@ ssl_close(Socket) ->
 %% This is intended to be invoked from handle_cast.
 %% Something really bad happened (i.e. connect failure, or packet send failure),
 %% and we should assume that the connection is dead and should be stopped.
-handle_error_and_stop(WhatFailed, Reason, State = #state{connection = #apns_connection{error_fun = ErrorFun}, owner = Owner}) ->
+handle_error_and_stop(Msg, WhatFailed, Reason, State = #state{connection = #apns_connection{error_fun = ErrorFun}, owner = Owner}) ->
     case is_function(ErrorFun) of
         true ->
-            try ErrorFun({Owner, undefined}, {error, WhatFailed, Reason}) of
+            try ErrorFun({Owner, Msg#apns_msg.id}, {error, WhatFailed, Reason}) of
                 _ -> {stop, Reason, State}
             catch
                 _:Err ->
