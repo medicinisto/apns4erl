@@ -13,7 +13,7 @@
 -include("localized.hrl").
 
 -export([start_link/2, start_link/3, init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([send_message/2, sync_send_message/2, stop/1]).
+-export([send_message/2, stop/1]).
 -export([build_payload/1]).
 -export([test_connection/1]).
 
@@ -36,14 +36,6 @@
 -spec send_message(apns:conn_id(), #apns_msg{}) -> ok.
 send_message(ConnId, Msg) ->
   gen_server:cast(ConnId, Msg).
-
-
-%% @doc  Sends a message to apple through the connection, and reports
-%% if the message went through. This does not mean the message
-%% actually got to the device
--spec sync_send_message(apns:conn_id(), #apns_msg{}) -> ok.
-sync_send_message(ConnId, Msg) ->
-    gen_server:call(ConnId, Msg).
 
 %% @doc  Stops the connection
 -spec stop(apns:conn_id()) -> ok.
@@ -146,37 +138,35 @@ open_feedback(Connection) ->
   end.
 
 %% @hidden
-
-handle_call(#apns_msg{} = Msg, _From, State) ->
-    case handle_cast(Msg, State) of
-        {stop, Reason, State2} ->
-            {reply, {error, Reason}, State2};
-        {noreply, State2} ->
-            {reply, ok, State2}
-    end.
+-spec handle_call(X, reference(), state()) -> {stop, {unknown_request, X}, {unknown_request, X}, state()}.
+handle_call(Request, _From, State) ->
+    {stop, {unknown_request, Request}, {unknown_request, Request}, State}.
 
 %% @hidden
 -spec handle_cast(stop | #apns_msg{}, state()) -> {noreply, state()} | {stop, normal | {error, term()}, state()}.
 handle_cast(Msg, State=#state{out_socket=undefined,connection=Connection}) ->
   try
-    lager:info("Reconnecting to APNS...~n"),
+    lager:info("Reconnecting to APNS..."),
     case open_out(Connection) of
       {ok, Socket} -> handle_cast(Msg, State#state{out_socket=Socket});
-      {error, Reason} -> {stop, Reason}
+      {error, Reason} -> handle_error_and_stop(connect, Reason, State)
     end
   catch
-    _:{error, Reason2} -> {stop, Reason2}
+    _:{error, Reason2} -> handle_error_and_stop(connect, Reason2, State)
   end;
 
 handle_cast(Msg, State) when is_record(Msg, apns_msg) ->
   Socket = State#state.out_socket,
   Payload = build_payload(Msg),
   BinToken = hexstr_to_bin(Msg#apns_msg.device_token),
-  case send_payload(Socket, Msg#apns_msg.id, Msg#apns_msg.expiry, BinToken, Payload) of
+  try send_payload(Socket, Msg#apns_msg.id, Msg#apns_msg.expiry, BinToken, Payload) of
     ok ->
       {noreply, State};
     {error, Reason} ->
-      {stop, {error, Reason}, State}
+      handle_error_and_stop(send_payload, Reason, State)
+  catch
+      _:Reason ->
+          handle_error_and_stop(send_payload, Reason, State)
   end;
 
 handle_cast(stop, State) ->
@@ -199,7 +189,7 @@ handle_info({ssl, SslSocket, Data}, State = #state{out_socket = SslSocket,
             _ -> noop
           catch
             _:ErrorResult ->
-              lager:error("Error trying to inform error (~p) msg:~n\t~p~n", [Status, ErrorResult])
+              lager:error("Error trying to inform error (~p) msg:~n\t~p", [Status, ErrorResult])
           end,
           case erlang:size(Rest) of
             0 -> {noreply, State#state{out_buffer = <<>>}}; %% It was a whole package
@@ -225,7 +215,7 @@ handle_info({ssl, SslSocket, Data}, State = #state{in_socket  = SslSocket,
       try Feedback({Owner, apns:timestamp(TimeT), bin_to_hexstr(Token)})
       catch
         _:Error ->
-          lager:error("Error trying to inform feedback token ~p:~n\t~p~n", [Token, Error])
+          lager:error("Error trying to inform feedback token ~p:~n\t~p", [Token, Error])
       end,
       case erlang:size(Rest) of
         0 -> {noreply, State#state{in_buffer = <<>>}}; %% It was a whole package
@@ -237,27 +227,27 @@ handle_info({ssl, SslSocket, Data}, State = #state{in_socket  = SslSocket,
 
 handle_info({ssl_closed, SslSocket}, State = #state{in_socket = SslSocket,
                                                     connection= Connection}) ->
-  lager:info("Feedback server disconnected. Waiting ~p millis to connect again...~n",
+  lager:info("Feedback server disconnected. Waiting ~p millis to connect again...",
                         [Connection#apns_connection.feedback_timeout]),
   _Timer = erlang:send_after(Connection#apns_connection.feedback_timeout, self(), reconnect),
   {noreply, State#state{in_socket = undefined}};
 
 handle_info(reconnect, State = #state{connection = Connection}) ->
-  lager:info("Reconnecting the Feedback server...~n"),
+  lager:info("Reconnecting the Feedback server..."),
   case open_feedback(Connection) of
     {ok, InSocket} -> {noreply, State#state{in_socket = InSocket}};
     {error, Reason} -> {stop, {in_closed, Reason}, State}
   end;
 
 handle_info({ssl_closed, SslSocket}, State = #state{out_socket = SslSocket}) ->
-  lager:info("APNS disconnected~n"),
+  lager:info("APNS disconnected"),
   {noreply, State#state{out_socket=undefined}};
 
 
 handle_info(timeout, #state{connection = Connection}=State) ->
     case open_out(Connection) of
       {ok, Socket} -> 
-            lager:debug("Opened connection, ~n"),
+            lager:debug("Opened connection"),
             case open_feedback(Connection) of
                 {ok, InSocket} -> 
                     {noreply, State#state{out_socket=Socket, in_socket=InSocket}};
@@ -337,7 +327,7 @@ send_payload(Socket, MsgId, Expiry, BinToken, Payload) ->
                 BinToken/binary,
                 PayloadLength:16/big,
                 BinPayload/binary>>],
-    lager:info("Sending msg (expires on ~p)~n", [Expiry]),
+    lager:info("Sending msg (expires on ~p)", [Expiry]),
     ssl_send(Socket, Packet).
 
 hexstr_to_bin(S) ->
@@ -377,3 +367,23 @@ ssl_connect(Host, Port, Opts, Timeout) ->
 
 ssl_close(Socket) ->
     ssl:close(Socket).
+
+%% This is intended to be invoked from handle_cast.
+%% Something really bad happened (i.e. connect failure, or packet send failure),
+%% and we should assume that the connection is dead and should be stopped.
+handle_error_and_stop(WhatFailed, Reason, State = #state{connection = #apns_connection{error_fun = ErrorFun}, owner = Owner}) ->
+    case is_function(ErrorFun) of
+        true ->
+            try ErrorFun({Owner, undefined}, {error, WhatFailed, Reason}) of
+                _ -> {stop, Reason, State}
+            catch
+                _:Err ->
+                    lager:error("Error while invoking ~p for ~p: ~p",
+                                [ErrorFun, WhatFailed, Err]),
+                    {stop, Reason, State}
+            end;
+        false ->
+            %% error_fun wasn't defined, so just log the error and stop
+            lager:error("Error: ~p: ~p", [WhatFailed, Reason]),
+            {stop, Reason, State}
+    end.
