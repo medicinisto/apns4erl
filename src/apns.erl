@@ -276,7 +276,7 @@ custom_connection(CertDer, KeyType, KeyDer, ErrorFun, FeedbackFun, Mode) ->
                                                            {M, F} -> fun M:F/2;
                                                            Other -> Other
                                                          end;
-                                            {M, F} -> fun M:F/1;
+                                            {M, F} -> fun M:F/2;
                                             _ -> undefined
                                           end,
                        feedback_timeout = get_env(feedback_timeout, Conn#apns_connection.feedback_timeout),
