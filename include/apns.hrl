@@ -9,6 +9,7 @@
                           key_type          = undefined                             :: atom(),
 						              cert_password     = undefined             								:: undefined | string(),
                           timeout           = 30000                                 :: integer(),
+                          ssl_connect_options = []                                  :: [{atom(), any()}],
                           error_fun         = fun(X,Y) -> erlang:display({X,Y}) end :: fun((binary(), apns:status()) -> stop | _),
                           feedback_host     = "feedback.sandbox.push.apple.com"     :: string(),
                           feedback_port     = 2196                                  :: integer(),

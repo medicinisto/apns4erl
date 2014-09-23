@@ -89,7 +89,7 @@ open_out(Connection) ->
   ssl_connect(
     Connection#apns_connection.apple_host,
     Connection#apns_connection.apple_port,
-    RealSslOpts,
+    Connection#apns_connection.ssl_connect_options ++ RealSslOpts,
     Connection#apns_connection.timeout).
   
 %% @hidden
