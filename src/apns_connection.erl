@@ -13,7 +13,7 @@
 -include("localized.hrl").
 
 -export([start_link/2, start_link/3, init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([send_message/2, stop/1]).
+-export([send_message/3, stop/1]).
 -export([build_payload/1]).
 -export([test_connection/1]).
 
@@ -33,9 +33,9 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% @doc  Sends a message to apple through the connection
--spec send_message(apns:conn_id(), #apns_msg{}) -> ok.
-send_message(ConnId, Msg) ->
-  gen_server:cast(ConnId, Msg).
+-spec send_message(apns:conn_id(), fun(), #apns_msg{}) -> ok.
+send_message(ConnId, LogFun, Msg) ->
+  gen_server:cast({send_message, ConnId, LogFun}, Msg).
 
 %% @doc  Stops the connection
 -spec stop(apns:conn_id()) -> ok.
@@ -155,15 +155,16 @@ handle_cast(Msg, State=#state{out_socket=undefined,connection=Connection}) ->
     _:{error, Reason2} -> handle_error_and_stop(Msg, connect, Reason2, State)
   end;
 
-handle_cast(Msg, State) when is_record(Msg, apns_msg) ->
+handle_cast({send_message, Msg, LogFun}, State) when is_record(Msg, apns_msg) ->
   Socket = State#state.out_socket,
   Payload = build_payload(Msg),
   BinToken = hexstr_to_bin(Msg#apns_msg.device_token),
   try send_payload(Socket, Msg#apns_msg.id, Msg#apns_msg.expiry, BinToken, Payload) of
     ok ->
-      {noreply, State};
+          LogFun(),
+          {noreply, State};
     {error, Reason} ->
-      handle_error_and_stop(Msg, send_payload, Reason, State)
+          handle_error_and_stop(Msg, send_payload, Reason, State)
   catch
       _:Reason ->
           handle_error_and_stop(Msg, send_payload, Reason, State)
