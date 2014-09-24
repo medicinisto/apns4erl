@@ -34,8 +34,8 @@
 
 %% @doc  Sends a message to apple through the connection
 -spec send_message(apns:conn_id(), fun(), #apns_msg{}) -> ok.
-send_message(ConnId, LogFun, Msg) ->
-  gen_server:cast({send_message, ConnId, LogFun}, Msg).
+send_message(ConnId, Msg, LogFun) ->
+  gen_server:cast(ConnId, {send_message, Msg, LogFun}).
 
 %% @doc  Stops the connection
 -spec stop(apns:conn_id()) -> ok.
