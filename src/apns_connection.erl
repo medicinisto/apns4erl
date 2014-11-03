@@ -159,7 +159,7 @@ handle_cast({send_message, Msg, LogFun}, State) when is_record(Msg, apns_msg) ->
   Socket = State#state.out_socket,
   Payload = build_payload(Msg),
   BinToken = hexstr_to_bin(Msg#apns_msg.device_token),
-  try send_payload(Socket, Msg#apns_msg.id, Msg#apns_msg.expiry, BinToken, Payload) of
+  try send_payload(Socket, Msg#apns_msg.id, Msg#apns_msg.expiry, Msg#apns_msg.priority, BinToken, Payload) of
     ok ->
           LogFun(),
           {noreply, State};
@@ -319,15 +319,17 @@ do_build_payload([{Key,Value}|Params], Payload) ->
 do_build_payload([], Payload) ->
   {Payload}.
 
--spec send_payload(tuple(), binary(), non_neg_integer(), binary(), iolist()) -> ok | {error, term()}.
-send_payload(Socket, MsgId, Expiry, BinToken, Payload) ->
+-spec send_payload(tuple(), binary(), non_neg_integer(), non_neg_integer(), binary(), iolist()) -> ok | {error, term()}.
+send_payload(Socket, MsgId, Expiry, Priority, BinToken, Payload) ->
     BinPayload = list_to_binary(Payload),
     PayloadLength = erlang:size(BinPayload),
-    Packet = [<<1:8, MsgId/binary, Expiry:4/big-unsigned-integer-unit:8,
-                32:16/big,
-                BinToken/binary,
-                PayloadLength:16/big,
-                BinPayload/binary>>],
+    FrameData = <<1:8, 32:16/big, BinToken/binary,
+                  2:8, PayloadLength:16/big, BinPayload/binary,
+                  3:8, 4:16/big, MsgId/binary,
+                  4:8, 4:16/big, Expiry:4/big-unsigned-integer-unit:8,
+                  5:8, 1:16/big, Priority:1/big-unsigned-integer-unit:8>>,
+    FrameDataLength = size(FrameData),
+    Packet = <<2:8, FrameDataLength:4/big-unsigned-integer-unit:8, FrameData/binary>>,
     lager:info("Sending msg (expires on ~p)", [Expiry]),
     ssl_send(Socket, Packet).
 
