@@ -86,3 +86,8 @@ If there were no errors, but Apple reported that the user removed the applicatio
 layer_custom branch
 ===================================
 This branch contains modifications mainly for providing connection parameters programmatically (such as the certificate/key binaries, error/feedback functions etc.)
+
+Running tests 
+===================================
+
+Put your cert in `priv/cert.pem`, then run `erl -pa ebin -pa test -pa deps/**/ebin -eval "apns_tests:main()."`

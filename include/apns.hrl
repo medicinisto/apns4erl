@@ -24,4 +24,6 @@
                    sound = none                 :: none | apns:apns_str(),
                    apns_extra = []              :: none | [{atom(), integer()|boolean()|string()}],
                    extra = []                   :: [apns_mochijson2:json_property()],
-                   'content-available' = no     :: no | 1}).
+                   'content-available' = no     :: no | 1,
+                   priority = 10                :: non_neg_integer() %% default is high, use 5 for low
+                  }).
