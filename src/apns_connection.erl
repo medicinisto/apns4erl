@@ -14,6 +14,7 @@
 
 -export([start_link/2, start_link/3, init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([send_message/3, stop/1]).
+-export([send_payload/7]).
 -export([build_payload/1]).
 -export([test_connection/1]).
 
@@ -33,9 +34,15 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% @doc  Sends a message to apple through the connection
--spec send_message(apns:conn_id(), fun(), #apns_msg{}) -> ok.
+-spec send_message(apns:conn_id(), #apns_msg{}, fun()) -> ok.
 send_message(ConnId, Msg, LogFun) ->
   gen_server:cast(ConnId, {send_message, Msg, LogFun}).
+
+%% @doc  Sends a payload directly
+-spec send_payload(apns:conn_id(), binary(), non_neg_integer(), non_neg_integer(), string(),
+                   iolist() | binary(), fun()) -> ok.
+send_payload(ConnId, MsgId, Expiry, Priority, DeviceToken, Payload, LogFun) ->
+    gen_server:cast(ConnId, {send_payload, MsgId, Expiry, Priority, DeviceToken, Payload, LogFun}).
 
 %% @doc  Stops the connection
 -spec stop(apns:conn_id()) -> ok.
@@ -149,26 +156,19 @@ handle_cast(Msg, State=#state{out_socket=undefined,connection=Connection}) ->
     lager:info("Reconnecting to APNS..."),
     case open_out(Connection) of
       {ok, Socket} -> handle_cast(Msg, State#state{out_socket=Socket});
-      {error, Reason} -> handle_error_and_stop(Msg, connect, Reason, State)
+      {error, Reason} -> handle_error_and_stop(Msg#apns_msg.id, connect, Reason, State)
     end
   catch
-    _:{error, Reason2} -> handle_error_and_stop(Msg, connect, Reason2, State)
+    _:{error, Reason2} -> handle_error_and_stop(Msg#apns_msg.id, connect, Reason2, State)
   end;
 
 handle_cast({send_message, Msg, LogFun}, State) when is_record(Msg, apns_msg) ->
-  Socket = State#state.out_socket,
   Payload = build_payload(Msg),
-  BinToken = hexstr_to_bin(Msg#apns_msg.device_token),
-  try send_payload(Socket, Msg#apns_msg.id, Msg#apns_msg.expiry, Msg#apns_msg.priority, BinToken, Payload) of
-    ok ->
-          LogFun(),
-          {noreply, State};
-    {error, Reason} ->
-          handle_error_and_stop(Msg, send_payload, Reason, State)
-  catch
-      _:Reason ->
-          handle_error_and_stop(Msg, send_payload, Reason, State)
-  end;
+  try_to_send_payload(Msg#apns_msg.id, Msg#apns_msg.expiry, Msg#apns_msg.priority,
+                      Msg#apns_msg.device_token, Payload, LogFun, State);
+
+handle_cast({send_payload, MsgId, Expiry, Priority, DeviceToken, Payload, LogFun}, State) ->
+  try_to_send_payload(MsgId, Expiry, Priority, DeviceToken, Payload, LogFun, State);
 
 handle_cast(stop, State) ->
   {stop, normal, State}.
@@ -274,6 +274,22 @@ code_change(_OldVsn, State, _Extra) ->  {ok, State}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Private functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+try_to_send_payload(MsgId, Expiry, Priority, DeviceToken, Payload, LogFun, State) when is_list(Payload) ->
+    try_to_send_payload(MsgId, Expiry, Priority, DeviceToken, list_to_binary(Payload), LogFun, State);
+
+try_to_send_payload(MsgId, Expiry, Priority, DeviceToken, Payload, LogFun,
+                    #state{out_socket=Socket} = State) when is_binary(Payload) ->
+    try do_send_payload(Socket, MsgId, Expiry, Priority, hexstr_to_bin(DeviceToken), Payload) of
+        ok ->
+            LogFun(),
+            {noreply, State};
+        {error, Reason} ->
+            handle_error_and_stop(MsgId, send_payload, Reason, State)
+    catch
+        _:Reason ->
+            handle_error_and_stop(MsgId, send_payload, Reason, State)
+    end.
+
 build_payload(#apns_msg{alert = Alert,
                         badge = Badge,
                         sound = Sound,
@@ -319,12 +335,12 @@ do_build_payload([{Key,Value}|Params], Payload) ->
 do_build_payload([], Payload) ->
   {Payload}.
 
--spec send_payload(tuple(), binary(), non_neg_integer(), non_neg_integer(), binary(), iolist()) -> ok | {error, term()}.
-send_payload(Socket, MsgId, Expiry, Priority, BinToken, Payload) ->
-    BinPayload = list_to_binary(Payload),
-    PayloadLength = erlang:size(BinPayload),
+-spec do_send_payload(tuple(), binary(), non_neg_integer(), non_neg_integer(), binary(), binary()) ->
+                             ok | {error, term()}.
+do_send_payload(Socket, MsgId, Expiry, Priority, BinToken, Payload) when is_binary(Payload) ->
+    PayloadLength = erlang:size(Payload),
     FrameData = <<1:8, 32:16/big, BinToken/binary,
-                  2:8, PayloadLength:16/big, BinPayload/binary,
+                  2:8, PayloadLength:16/big, Payload/binary,
                   3:8, 4:16/big, MsgId/binary,
                   4:8, 4:16/big, Expiry:4/big-unsigned-integer-unit:8,
                   5:8, 1:16/big, Priority:1/big-unsigned-integer-unit:8>>,
@@ -375,10 +391,10 @@ ssl_close(Socket) ->
 %% This is intended to be invoked from handle_cast.
 %% Something really bad happened (i.e. connect failure, or packet send failure),
 %% and we should assume that the connection is dead and should be stopped.
-handle_error_and_stop(Msg, WhatFailed, Reason, State = #state{connection = #apns_connection{error_fun = ErrorFun}, owner = Owner}) ->
+handle_error_and_stop(MsgId, WhatFailed, Reason, State = #state{connection = #apns_connection{error_fun = ErrorFun}, owner = Owner}) ->
     case is_function(ErrorFun) of
         true ->
-            try ErrorFun({Owner, Msg#apns_msg.id}, {error, WhatFailed, Reason}) of
+            try ErrorFun({Owner, MsgId}, {error, WhatFailed, Reason}) of
                 _ -> {stop, Reason, State}
             catch
                 _:Err ->
